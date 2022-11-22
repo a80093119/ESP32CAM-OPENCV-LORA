@@ -6,6 +6,7 @@ I'm really sorry you find this so frustrating. I had no idea that "GRAYSCALE", "
 3. RGB888 means that there are 3 bytes per pixel, one for red, one for green and one for blue. Each vary between 0 and 255.
 4. YUV means that each pixel has it's Y channel as a separate byte (0 to 255) and each two adjacent pixels share their U and V values.
 6. JPEG means that the image is encoded into JPEG format either by the camera itself or in software.  
+
 When you get a frame from the camera, it will contain the frame buffer in the format you selected.  
 https://www.esp32.com/viewtopic.php?t=10405  
 
