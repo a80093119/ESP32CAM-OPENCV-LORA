@@ -11,4 +11,8 @@ When you get a frame from the camera, it will contain the frame buffer in the fo
 https://www.esp32.com/viewtopic.php?t=10405  
 
 ## jpeg decoder  
-https://github.com/espressif/esp32-camera/blob/master/conversions/include/esp_jpg_decode.h
+https://github.com/espressif/esp32-camera/blob/master/conversions/include/esp_jpg_decode.h 
+
+# ESP32cam with shrinked opencv 
+https://www.youtube.com/watch?v=7qPIRBY6C8c&ab_channel=ThatProject 
+https://github.com/joachimBurket/esp32-opencv 
