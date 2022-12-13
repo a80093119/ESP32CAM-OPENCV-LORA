@@ -16,3 +16,12 @@ https://github.com/espressif/esp32-camera/blob/master/conversions/include/esp_jp
 # ESP32cam with shrinked opencv 
 https://www.youtube.com/watch?v=7qPIRBY6C8c&ab_channel=ThatProject  
 https://github.com/joachimBurket/esp32-opencv 
+
+# Docker啟動指令  
+cd esp32-opencv  
+docker run --rm -v $PWD:/project:z -w /project -it espressif/idf  
+## build opencv  
+./esp32/scripts/build_opencv_for_esp32.sh /opt/esp/idf/tools/cmake/toolchain-esp32.cmake /project/esp32/examples/ttgo_demo/main  
+## build program  
+cd esp32/examples/ttgo_demo  
+idf.py build  
