@@ -1,4 +1,10 @@
 {
     "idf.adapterTargetName": "esp32",
+    "cmake.configureOnOpen": false,
+    "files.associations": {
+        "ostream": "cpp",
+        "string": "cpp",
+        "iostream": "cpp"
+    },
     "idf.portWin": "COM3"
 }
