@@ -25,3 +25,6 @@ docker run --rm -v $PWD:/project:z -w /project -it espressif/idf
 ## build program  
 cd esp32/examples/ttgo_demo  
 idf.py build  
+
+# ESP32cam LCD  
+https://blog.csdn.net/qq_37429313/article/details/122085869
