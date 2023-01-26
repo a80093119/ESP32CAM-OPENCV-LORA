@@ -1,7 +1,5 @@
-
-
-#define SPI_MISO 12
-#define SPI_MOSI 13
+#define SPI_MISO 16
+#define SPI_MOSI 12
 #define SPI_SCLK 14
 
 #define SD_CS 0
@@ -12,10 +10,10 @@
 #define TFT_MISO SPI_MISO
 #define TFT_MOSI SPI_MOSI
 #define TFT_SCLK SPI_SCLK
-#define TFT_CS 15  // Chip select control pin
-#define TFT_DC 2   // Data Command control pin
-#define TFT_BK 16  // TFT backlight  pin
-#define TFT_RST 12 // No use
+#define TFT_CS 2   // Chip select control pin
+#define TFT_DC 15  // Data Command control pin
+#define TFT_BK 2   // TFT backlight  pin
+#define TFT_RST 13 // No use
 
 #define TFT_WITDH 240
 #define TFT_HEIGHT 240

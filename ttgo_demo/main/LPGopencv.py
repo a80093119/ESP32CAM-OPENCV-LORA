@@ -3,6 +3,7 @@ import matplotlib.image as mpimg
 import numpy as np
 import cv2
 import math
+import copy
 
 
 def plot_img(data):
@@ -31,24 +32,24 @@ high_threshold = 150
 masked_edges = cv2.Canny(blur_gray, low_threshold, high_threshold)
 plot_img(masked_edges)
 
-rho = 1
-theta = np.pi/180
-threshold = 3
-min_line_length = 10
-max_line_gap = 1
+# rho = 1
+# theta = np.pi/180
+# threshold = 3
+# min_line_length = 10
+# max_line_gap = 1
 
-line_image = np.copy(gray)*0  # creating a blank to draw lines on
+# line_image = np.copy(gray)*0  # creating a blank to draw lines on
 
-lines = cv2.HoughLinesP(masked_edges, rho, theta, threshold, np.array([]),
-                        min_line_length, max_line_gap)
+# lines = cv2.HoughLinesP(masked_edges, rho, theta, threshold, np.array([]),
+#                         min_line_length, max_line_gap)
 
-for line in lines:
-    for x1, y1, x2, y2 in line:
-        cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
+# for line in lines:
+#     for x1, y1, x2, y2 in line:
+#         cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
 
-#color_edges = np.dstack((masked_edges, masked_edges, masked_edges))
-combo = cv2.addWeighted(masked_edges, 0.8, line_image, 1, 0)
-plt.imshow(combo)
+# #color_edges = np.dstack((masked_edges, masked_edges, masked_edges))
+# combo = cv2.addWeighted(masked_edges, 0.8, line_image, 1, 0)
+# plt.imshow(combo)
 
 # cv.HoughCircles函数设置参数
 
@@ -66,7 +67,18 @@ plt.imshow(image)
 
 def dist_2_pt(x1, y1, x2, y2):
     return np.sqrt(pow(x1-x2, 2)+pow(y1-y2, 2))
+    
+circle_img = copy.deepcopy(gray[i[1]-int(0.4*i[2]):i[1]+int(0.4*i[2]),
+         i[0]-int(0.4*i[2]):i[0]+int(0.4*i[2])])
+for (y,x), value in np.ndenumerate(circle_img): 
 
+    if circle_img[y,x] > 153: #Good Pixel
+        circle_img[y,x]=255
+    elif circle_img[y,x] < 154: #Bad Pixel
+        circle_img[y,x]=0
+
+plot_img(circle_img)
+plot_img(gray)
 
 x = circles[0][0, 0]
 y = circles[0][0, 1]

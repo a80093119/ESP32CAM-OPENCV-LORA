@@ -187,6 +187,20 @@ esp_err_t esp_camera_save_to_nvs(const char *key);
  */
 esp_err_t esp_camera_load_from_nvs(const char *key);
 
+/**
+ * @brief Load camera settings from non-volatile-storage (NVS)
+ * 
+ * @param key   A unique nvs key name for the camera settings 
+ */
+void esp_deep_sleep_start(void);
+
+/**
+ * @brief Load camera settings from non-volatile-storage (NVS)
+ * 
+ * @param key   A unique nvs key name for the camera settings 
+ */
+esp_err_t esp_sleep_enable_timer_wakeup(uint64_t time_in_us);
+
 #ifdef __cplusplus
 }
 #endif

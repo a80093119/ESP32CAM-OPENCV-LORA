@@ -5,8 +5,10 @@
 #define EPS 192
 
 #include <esp_log.h>
+#include <esp_sleep.h>
 #include <esp_err.h>
 #include <esp_timer.h>
+#include <driver/uart.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -172,15 +174,30 @@ void demo_task(void *arg)
         //      << "theta2=" << to_string(51) << endl;
         // cout << "AT+SEND=1,"
         //      << "theta2=" << to_string(51) << endl;
-        // int value1 = 1, value2 = 51;
-        // int valuelen = to_string(value1 + 100).length() + to_string(value2 + 100).length() + 1;
-        // String mymessage;
-        // mymessage = mymessage + "AT+SEND=1" + "," + to_string(valuelen) + "," + to_string(value1 + 100) + "," + to_string(value2 + 100);
-        // cout << mymessage << endl;
-        // wait_msec(500);
+        int value1 = 1, value2 = 51;
+        int valuelen = to_string(value1 + 100).length() + to_string(value2 + 100).length() + 1;
+        String mymessage;
+        mymessage = mymessage + "AT+SEND=1" + "," + to_string(valuelen) + "," + to_string(value1 + 100) + "," + to_string(value2 + 100);
+        // Setup UART buffered IO with event queue
+        const int uart_buffer_size = (1024 * 2);
+        QueueHandle_t uart_queue;
+        // Install UART driver using an event queue here
+        ESP_ERROR_CHECK(uart_driver_install(GPIO_NUM_2, uart_buffer_size,
+                                            uart_buffer_size, 10, &uart_queue, 0));
+        // Read data from UART.
+        uint8_t data[128];
+        int length = 0;
+        ESP_ERROR_CHECK(uart_get_buffered_data_len(GPIO_NUM_2, (size_t *)&length));
+        length = uart_read_bytes(GPIO_NUM_2, data, length, 100);
+        if (length != 0)
+        {
+            gpio_set_level(GPIO_NUM_4, 1);
+        }
+        cout << length;
+        wait_msec(500);
         if (!fb)
         {
-            // ESP_LOGE(TAG, "Camera capture failed");
+            ESP_LOGE(TAG, "Camera capture failed");
         }
         else
         {
@@ -237,7 +254,7 @@ void demo_task(void *arg)
                         circle(src, Point(cc[0], cc[1]), 2, Scalar(125, 25, 255), 2, LINE_AA);
                         // }
                         // cout << "src=" << src << endl;
-                        // ESP_LOGE(TAG, "Detect only one circle: %d", pcircles.size());
+                        ESP_LOGE(TAG, "Detect only one circle: %d", pcircles.size());
                         vector<Vec4i> lines;
                         // HoughLines(src1, lines, 1, CV_PI / 180, 150, 0, 0);
                         HoughLinesP(inputImage, lines, 1, CV_PI / 180, 3, 10, 1); // 进行霍夫线变换
@@ -273,8 +290,8 @@ void demo_task(void *arg)
                                     line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
 
                                     // cout << "src=" << src << endl;
-                                    // ESP_LOGE(TAG, "True theta: %.4f", true_theta / CV_PI * 180);
-                                    // ESP_LOGE(TAG, "line length: %.4f", distance(l[0], l[1], l[2], l[3]));
+                                    ESP_LOGE(TAG, "True theta: %.4f", true_theta / CV_PI * 180);
+                                    ESP_LOGE(TAG, "line length: %.4f", distance(l[0], l[1], l[2], l[3]));
                                     int theta1 = (int)(true_theta / CV_PI * 180);
                                     int theta2 = (theta1 + 180) % 360;
                                     float range1 = 0.1818, range2 = 0.4285;
@@ -309,7 +326,6 @@ void demo_task(void *arg)
                                     String mymessage;
                                     mymessage = mymessage + "AT+SEND=1" + "," + to_string(valuelen) + "," + to_string(value1 + 100) + "," + to_string(value2 + 100);
                                     cout << mymessage << endl;
-                                    wait_msec(100);
                                 }
                             }
                         }
@@ -317,18 +333,23 @@ void demo_task(void *arg)
                     }
                     else
                     {
-                        // ESP_LOGE(TAG, "Detect too many circles or zero: %d", pcircles.size());
+                        ESP_LOGE(TAG, "Detect too many circles or zero: %d", pcircles.size());
+                        // String mymessage;
+                        // mymessage = mymessage + "AT+SEND=1" + "," + to_string(7) + "," + to_string(999) + "," + to_string(999);
+                        // cout << mymessage << endl;
                     }
                 }
                 else
                 {
-                    // ESP_LOGE(TAG, "Wrong display mode: %d", (int)currentDisplayMode);
+                    ESP_LOGE(TAG, "Wrong display mode: %d", (int)currentDisplayMode);
                 }
 
                 // display image on lcd
                 // updateCameraImage(inputImage);
             }
         }
+        // esp_sleep_enable_timer_wakeup(5000000);
+        // esp_deep_sleep_start();
         wait_msec(1000);
         // ESP_LOGI(TAG, "%s mode: around %f fps", displayModeToString(currentDisplayMode).c_str(), 1.0f / ((esp_timer_get_time() - start) / 1000000.0f));
     }
@@ -337,14 +358,14 @@ void demo_task(void *arg)
 /**
  * Task changing the current displayMode at regular interval
  */
-// void timer_task(void *arg)
-// {
-//     while (true)
-//     {
-//         wait_msec(10000);
-//         currentDisplayMode = static_cast<DisplayMode>((static_cast<int>(currentDisplayMode) + 1) % static_cast<int>(DisplayMode::NUM_OF_MODES));
-//     }
-// }
+void timer_task(void *arg)
+{
+    while (true)
+    {
+        wait_msec(10000);
+        currentDisplayMode = static_cast<DisplayMode>((static_cast<int>(currentDisplayMode) + 1) % static_cast<int>(DisplayMode::NUM_OF_MODES));
+    }
+}
 
 void app_main()
 {
@@ -364,10 +385,25 @@ void app_main()
     /* Define Lora ID & address */
     cout << "AT+NETWORKID=10" << endl;
     wait_msec(500);
-    cout << "AT+ADDRESS=4" << endl;
+    cout << "AT+ADDRESS=3" << endl;
     wait_msec(500);
+
+    const uart_port_t uart_num = GPIO_NUM_2;
+    uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS,
+        .rx_flow_ctrl_thresh = 122,
+    };
+    // Configure UART parameters
+    ESP_ERROR_CHECK(uart_param_config(uart_num, &uart_config));
+    // Set UART pins(TX: IO1, RX: IO3, RTS: IO18, CTS: IO19)
+    ESP_ERROR_CHECK(uart_set_pin(uart_num, 1, 3, 18, 18));
     // ESP_LOGI(TAG, "Display width = %d, height = %d", tft->width(), tft->height());
 
+    cout << "start test!";
     /* Start the tasks */
     xTaskCreatePinnedToCore(demo_task, "demo", 1024 * 9, nullptr, 24, nullptr, 0);
     // xTaskCreatePinnedToCore(timer_task, "timer", 1024 * 1, nullptr, 24, nullptr, 0);
