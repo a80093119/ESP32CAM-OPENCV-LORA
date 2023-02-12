@@ -31,6 +31,14 @@ extern "C"
     void app_main(void);
 }
 
+#define ECHO_TEST_TXD (GPIO_NUM_12)
+#define ECHO_TEST_RXD (GPIO_NUM_13)
+#define ECHO_TEST_RTS (UART_PIN_NO_CHANGE)
+#define ECHO_TEST_CTS (UART_PIN_NO_CHANGE)
+
+#define ECHO_UART_PORT_NUM (UART_NUM_2)
+#define BUF_SIZE (1024)
+
 #define TAG "main"
 
 extern CEspLcd *tft;
@@ -142,6 +150,24 @@ static const std::string displayModeToString(DisplayMode dispMode)
     return (it == DisplayModeStrings.end()) ? "Out of range" : it->second;
 }
 
+static void tx_task()
+{
+
+    size_t length = 0;
+    uart_get_buffered_data_len(UART_NUM_2, (size_t *)&length);
+    cout << length << endl;
+    if (length > 0)
+    {
+        const char *Txdata = (char *)malloc(100);
+        Txdata = "AT+SEND=1,7,101,151";
+        uart_write_bytes(UART_NUM_2, Txdata, strlen(Txdata));
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        cout << "send OK!" << endl;
+        uart_flush_input(UART_NUM_2);
+        cout << length << endl;
+    }
+}
+
 /**
  * Task doing the demo: Getting image from camera, processing it with opencv depending on the displayMode and
  * displaying it on the lcd
@@ -179,21 +205,28 @@ void demo_task(void *arg)
         String mymessage;
         mymessage = mymessage + "AT+SEND=1" + "," + to_string(valuelen) + "," + to_string(value1 + 100) + "," + to_string(value2 + 100);
         // Setup UART buffered IO with event queue
-        const int uart_buffer_size = (1024 * 2);
-        QueueHandle_t uart_queue;
-        // Install UART driver using an event queue here
-        ESP_ERROR_CHECK(uart_driver_install(GPIO_NUM_2, uart_buffer_size,
-                                            uart_buffer_size, 10, &uart_queue, 0));
-        // Read data from UART.
-        uint8_t data[128];
-        int length = 0;
-        ESP_ERROR_CHECK(uart_get_buffered_data_len(GPIO_NUM_2, (size_t *)&length));
-        length = uart_read_bytes(GPIO_NUM_2, data, length, 100);
-        if (length != 0)
+        // Configure a temporary buffer for the incoming data
+        uint8_t *data = (uint8_t *)malloc(BUF_SIZE);
+        // Read data from the UART
+        int len = uart_read_bytes(ECHO_UART_PORT_NUM, data, (BUF_SIZE - 1), 100);
+        if (len >= 20)
         {
-            gpio_set_level(GPIO_NUM_4, 1);
+            // gpio_set_level(GPIO_NUM_4, 1); // 把这个GPIO输出高電位
+            // gpio_set_level(GPIO_NUM_4, 0); // 把这个GPIO输出低電位
+            // gpio_set_level(GPIO_NUM_4, 1);
+            char chars[len + 1];
+            memcpy(chars, data, len);
+            chars[len] = '\0'; // Null-terminate the string
+            cout << chars << endl;
+            free(data);
+
+            // send data by uart
+            // int send_len = uart_write_bytes(ECHO_UART_PORT_NUM, (const char *)test_str, strlen(test_str));
+            // cout << "send " << send_len << endl;
         }
-        cout << length;
+        // int send_len = uart_write_bytes(UART_NUM_0, (const char *)test_str, strlen(test_str));
+        // cout << "send " << send_len << endl;
+        tx_task();
         wait_msec(500);
         if (!fb)
         {
@@ -388,7 +421,6 @@ void app_main()
     cout << "AT+ADDRESS=3" << endl;
     wait_msec(500);
 
-    const uart_port_t uart_num = GPIO_NUM_2;
     uart_config_t uart_config = {
         .baud_rate = 115200,
         .data_bits = UART_DATA_8_BITS,
@@ -397,10 +429,17 @@ void app_main()
         .flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS,
         .rx_flow_ctrl_thresh = 122,
     };
-    // Configure UART parameters
-    ESP_ERROR_CHECK(uart_param_config(uart_num, &uart_config));
-    // Set UART pins(TX: IO1, RX: IO3, RTS: IO18, CTS: IO19)
-    ESP_ERROR_CHECK(uart_set_pin(uart_num, 1, 3, 18, 18));
+    int intr_alloc_flags = 0;
+
+    // First -> UART0
+    // ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, intr_alloc_flags));
+    // ESP_ERROR_CHECK(uart_param_config(UART_NUM_0, &uart_config));
+    // ESP_ERROR_CHECK(uart_set_pin(UART_NUM_0, 1, 3, ECHO_TEST_RTS, ECHO_TEST_CTS));
+
+    // Second -> UART2
+    ESP_ERROR_CHECK(uart_driver_install(ECHO_UART_PORT_NUM, BUF_SIZE * 2, 0, 0, NULL, intr_alloc_flags));
+    ESP_ERROR_CHECK(uart_param_config(ECHO_UART_PORT_NUM, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(ECHO_UART_PORT_NUM, ECHO_TEST_TXD, ECHO_TEST_RXD, ECHO_TEST_RTS, ECHO_TEST_CTS));
     // ESP_LOGI(TAG, "Display width = %d, height = %d", tft->width(), tft->height());
 
     cout << "start test!";
