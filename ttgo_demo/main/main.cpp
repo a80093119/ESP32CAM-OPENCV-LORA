@@ -152,20 +152,12 @@ static const std::string displayModeToString(DisplayMode dispMode)
 
 static void tx_task()
 {
-
-    size_t length = 0;
-    uart_get_buffered_data_len(UART_NUM_2, (size_t *)&length);
-    cout << length << endl;
-    if (length > 0)
-    {
-        const char *Txdata = (char *)malloc(100);
-        Txdata = "AT+SEND=1,7,101,151";
-        uart_write_bytes(UART_NUM_2, Txdata, strlen(Txdata));
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-        cout << "send OK!" << endl;
-        uart_flush_input(UART_NUM_2);
-        cout << length << endl;
-    }
+    const char *Txdata = (char *)malloc(100);
+    Txdata = "AT+SEND=1,7,101,151";
+    int send_len = uart_tx_chars(ECHO_UART_PORT_NUM, Txdata, strlen(Txdata));
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    cout << "send OK! " << send_len << endl;
+    // free(Txdata);
 }
 
 /**
@@ -204,30 +196,40 @@ void demo_task(void *arg)
         int valuelen = to_string(value1 + 100).length() + to_string(value2 + 100).length() + 1;
         String mymessage;
         mymessage = mymessage + "AT+SEND=1" + "," + to_string(valuelen) + "," + to_string(value1 + 100) + "," + to_string(value2 + 100);
+        // cout << mymessage << endl;
         // Setup UART buffered IO with event queue
         // Configure a temporary buffer for the incoming data
         uint8_t *data = (uint8_t *)malloc(BUF_SIZE);
         // Read data from the UART
         int len = uart_read_bytes(ECHO_UART_PORT_NUM, data, (BUF_SIZE - 1), 100);
-        if (len >= 20)
+        if (len >= 15)
         {
-            // gpio_set_level(GPIO_NUM_4, 1); // 把这个GPIO输出高電位
-            // gpio_set_level(GPIO_NUM_4, 0); // 把这个GPIO输出低電位
-            // gpio_set_level(GPIO_NUM_4, 1);
-            char chars[len + 1];
-            memcpy(chars, data, len);
-            chars[len] = '\0'; // Null-terminate the string
-            cout << chars << endl;
-            free(data);
-
+            // cout << chars << endl;
+            int count = 0;
+            len = 0;
+            while ((count < 20) & (len < 15))
+            {
+                gpio_set_level(GPIO_NUM_4, 1); // 把这个GPIO输出高電位
+                wait_msec(500);
+                char chars[len + 1];
+                memcpy(chars, data, len);
+                chars[len] = '\0'; // Null-terminate the string
+                cout << mymessage << endl;
+                count += 1;
+                gpio_set_level(GPIO_NUM_4, 0); // 把这个GPIO输出低電位
+                len = uart_read_bytes(ECHO_UART_PORT_NUM, data, (BUF_SIZE - 1), 100);
+            }
+            gpio_set_level(GPIO_NUM_4, 1); // 把这个GPIO输出高電位
+            wait_msec(2000);
+            gpio_set_level(GPIO_NUM_4, 0); // 把这个GPIO输出低電位
             // send data by uart
             // int send_len = uart_write_bytes(ECHO_UART_PORT_NUM, (const char *)test_str, strlen(test_str));
             // cout << "send " << send_len << endl;
         }
         // int send_len = uart_write_bytes(UART_NUM_0, (const char *)test_str, strlen(test_str));
         // cout << "send " << send_len << endl;
-        tx_task();
-        wait_msec(500);
+        // tx_task();
+        // wait_msec(500);
         if (!fb)
         {
             ESP_LOGE(TAG, "Camera capture failed");
@@ -383,7 +385,7 @@ void demo_task(void *arg)
         }
         // esp_sleep_enable_timer_wakeup(5000000);
         // esp_deep_sleep_start();
-        wait_msec(1000);
+        wait_msec(500);
         // ESP_LOGI(TAG, "%s mode: around %f fps", displayModeToString(currentDisplayMode).c_str(), 1.0f / ((esp_timer_get_time() - start) / 1000000.0f));
     }
 }
@@ -415,10 +417,9 @@ void app_main()
     /* Display memory infos */
     disp_infos();
 
-    /* Define Lora ID & address */
     cout << "AT+NETWORKID=10" << endl;
     wait_msec(500);
-    cout << "AT+ADDRESS=3" << endl;
+    cout << "AT+ADDRESS=4" << endl;
     wait_msec(500);
 
     uart_config_t uart_config = {
@@ -441,6 +442,14 @@ void app_main()
     ESP_ERROR_CHECK(uart_param_config(ECHO_UART_PORT_NUM, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(ECHO_UART_PORT_NUM, ECHO_TEST_TXD, ECHO_TEST_RXD, ECHO_TEST_RTS, ECHO_TEST_CTS));
     // ESP_LOGI(TAG, "Display width = %d, height = %d", tft->width(), tft->height());
+
+    /* Define Lora ID & address */
+    // const char *Txdata1 = (char *)malloc(100);
+    // Txdata1 = "AT+NETWORKID=10";
+    // uart_tx_chars(ECHO_UART_PORT_NUM, Txdata1, strlen(Txdata1));
+    // const char *Txdata2 = (char *)malloc(100);
+    // Txdata2 = "AT+ADDRESS=2";
+    // uart_tx_chars(ECHO_UART_PORT_NUM, Txdata2, strlen(Txdata2));
 
     cout << "start test!";
     /* Start the tasks */
