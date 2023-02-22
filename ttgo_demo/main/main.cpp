@@ -180,214 +180,217 @@ void demo_task(void *arg)
     // lv_obj_move_foreground(lvCameraImage);
     gpio_pad_select_gpio(GPIO_NUM_4);                 // 选择一个GPIO
     gpio_set_direction(GPIO_NUM_4, GPIO_MODE_OUTPUT); // 把这个GPIO作为输出
-
-    while (true)
+    int out_count = 0;
+    while (out_count < 50)
     {
+        cout << out_count << endl;
         currentDisplayMode = DisplayMode::EDGES;
         // auto start = esp_timer_get_time();
-        // gpio_set_level(GPIO_NUM_4, 1); // 把这个GPIO输出高電位
-        camera_fb_t *fb = esp_camera_fb_get();
-        // gpio_set_level(GPIO_NUM_4, 0); // 把这个GPIO输出低電位
         // cout << "theta1=" << to_string(1) << ","
         //      << "theta2=" << to_string(51) << endl;
         // cout << "AT+SEND=1,"
         //      << "theta2=" << to_string(51) << endl;
-        int value1 = 1, value2 = 51;
-        int valuelen = to_string(value1 + 100).length() + to_string(value2 + 100).length() + 1;
-        String mymessage;
-        mymessage = mymessage + "AT+SEND=1" + "," + to_string(valuelen) + "," + to_string(value1 + 100) + "," + to_string(value2 + 100);
+        // int value1 = 1, value2 = 51;
+        // int valuelen = to_string(value1 + 100).length() + to_string(value2 + 100).length() + 1;
+        // String mymessage;
+        // mymessage = mymessage + "AT+SEND=1" + "," + to_string(valuelen) + "," + to_string(value1 + 100) + "," + to_string(value2 + 100);
         // cout << mymessage << endl;
         // Setup UART buffered IO with event queue
         // Configure a temporary buffer for the incoming data
         uint8_t *data = (uint8_t *)malloc(BUF_SIZE);
         // Read data from the UART
         int len = uart_read_bytes(ECHO_UART_PORT_NUM, data, (BUF_SIZE - 1), 100);
-        if (len >= 15)
+        char chars[len + 1];
+        memcpy(chars, data, len);
+        char step = chars[9];
+        if (step == '1')
         {
-            // cout << chars << endl;
-            int count = 0;
-            len = 0;
-            while ((count < 20) & (len < 15))
-            {
-                gpio_set_level(GPIO_NUM_4, 1); // 把这个GPIO输出高電位
-                wait_msec(500);
-                char chars[len + 1];
-                memcpy(chars, data, len);
-                chars[len] = '\0'; // Null-terminate the string
-                cout << mymessage << endl;
-                count += 1;
-                gpio_set_level(GPIO_NUM_4, 0); // 把这个GPIO输出低電位
-                len = uart_read_bytes(ECHO_UART_PORT_NUM, data, (BUF_SIZE - 1), 100);
-            }
-            gpio_set_level(GPIO_NUM_4, 1); // 把这个GPIO输出高電位
-            wait_msec(2000);
-            gpio_set_level(GPIO_NUM_4, 0); // 把这个GPIO输出低電位
             // send data by uart
             // int send_len = uart_write_bytes(ECHO_UART_PORT_NUM, (const char *)test_str, strlen(test_str));
             // cout << "send " << send_len << endl;
-        }
-        // int send_len = uart_write_bytes(UART_NUM_0, (const char *)test_str, strlen(test_str));
-        // cout << "send " << send_len << endl;
-        // tx_task();
-        // wait_msec(500);
-        if (!fb)
-        {
-            ESP_LOGE(TAG, "Camera capture failed");
-        }
-        else
-        {
-            if (s->pixformat == PIXFORMAT_JPEG)
+
+            // int send_len = uart_write_bytes(UART_NUM_0, (const char *)test_str, strlen(test_str));
+            // cout << "send " << send_len << endl;
+            // tx_task();
+            // wait_msec(500);
+            gpio_set_level(GPIO_NUM_4, 1); // 把这个GPIO输出高電位
+            camera_fb_t *fb = esp_camera_fb_get();
+            gpio_set_level(GPIO_NUM_4, 0); // 把这个GPIO输出低電位
+            int value1 = 0, value2 = 0;
+            if (!fb)
             {
-                // TFT_jpg_image(CENTER, CENTER, 0, -1, NULL, fb->buf, fb->len);
-                esp_camera_fb_return(fb);
-                fb = NULL;
+                ESP_LOGE(TAG, "Camera capture failed");
             }
             else
-            {                                                            // RGB565 pixformat
-                Mat inputImage(fb->height, fb->width, CV_8UC2, fb->buf); // rgb565 is 2 channels of 8-bit unsigned
+            {
+                if (s->pixformat == PIXFORMAT_JPEG)
+                {
+                    // TFT_jpg_image(CENTER, CENTER, 0, -1, NULL, fb->buf, fb->len);
+                    esp_camera_fb_return(fb);
+                    fb = NULL;
+                }
+                else
+                {                                                            // RGB565 pixformat
+                    Mat inputImage(fb->height, fb->width, CV_8UC2, fb->buf); // rgb565 is 2 channels of 8-bit unsigned
 
-                if (currentDisplayMode == DisplayMode::RGB)
-                {
-                }
-                else if (currentDisplayMode == DisplayMode::GRAYSCALE)
-                {
-                    cvtColor(inputImage, inputImage, COLOR_BGR5652GRAY);
-                }
-                else if (currentDisplayMode == DisplayMode::BINARIZED)
-                {
-                    cvtColor(inputImage, inputImage, COLOR_BGR5652GRAY);
-                    threshold(inputImage, inputImage, 128, 255, THRESH_BINARY);
-                }
-                else if (currentDisplayMode == DisplayMode::EDGES)
-                {
-                    cvtColor(inputImage, inputImage, COLOR_BGR5652GRAY);
-                    // cout << "original pic" << inputImage << endl;
-                    inputImage.copyTo(src);
-                    // Reduce noise with a kernel 3x3
-                    GaussianBlur(inputImage, inputImage, Size(3, 3), 0);
-                    /** Apply the canny edges detector with:
-                     * - low threshold = 50
-                     * - high threshold = 4x low
-                     * - sobel kernel size = 3x3
-                     */
-                    int lowThresh = 50;
-                    int kernSize = 3;
-                    Canny(inputImage, inputImage, lowThresh, 3 * lowThresh, kernSize);
-                    // cv::resize(inputImage, resizeImg, cv::Size(40, 30), cv::INTER_LINEAR);
-                    // cout << "original pic" << inputImage << endl;
-                    // ESP_LOGE(TAG, "DetectCanny", inputImage);
-                    // 霍夫圆检测
-                    vector<Vec3f> pcircles;
-                    HoughCircles(inputImage, pcircles, HOUGH_GRADIENT, 1, 30, lowThresh, 30, 30, 50);
-                    if (pcircles.size() == 1)
+                    if (currentDisplayMode == DisplayMode::RGB)
                     {
-
-                        // for (size_t i = 0; i < pcircles.size(); i++)
-                        // {
-                        Vec3f cc = pcircles[0];
-                        circle(src, Point(cc[0], cc[1]), cc[2], Scalar(0, 0, 255), 2, LINE_AA);
-                        circle(src, Point(cc[0], cc[1]), 2, Scalar(125, 25, 255), 2, LINE_AA);
-                        // }
-                        // cout << "src=" << src << endl;
-                        ESP_LOGE(TAG, "Detect only one circle: %d", pcircles.size());
-                        vector<Vec4i> lines;
-                        // HoughLines(src1, lines, 1, CV_PI / 180, 150, 0, 0);
-                        HoughLinesP(inputImage, lines, 1, CV_PI / 180, 3, 10, 1); // 进行霍夫线变换
-                        // ESP_LOGE(TAG, "Detect lines: %d", lines.size());
-                        for (size_t i = 0; i < lines.size(); i++)
+                    }
+                    else if (currentDisplayMode == DisplayMode::GRAYSCALE)
+                    {
+                        cvtColor(inputImage, inputImage, COLOR_BGR5652GRAY);
+                    }
+                    else if (currentDisplayMode == DisplayMode::BINARIZED)
+                    {
+                        cvtColor(inputImage, inputImage, COLOR_BGR5652GRAY);
+                        threshold(inputImage, inputImage, 128, 255, THRESH_BINARY);
+                    }
+                    else if (currentDisplayMode == DisplayMode::EDGES)
+                    {
+                        cvtColor(inputImage, inputImage, COLOR_BGR5652GRAY);
+                        // cout << "original pic" << inputImage << endl;
+                        inputImage.copyTo(src);
+                        // Reduce noise with a kernel 3x3
+                        GaussianBlur(inputImage, inputImage, Size(3, 3), 0);
+                        /** Apply the canny edges detector with:
+                         * - low threshold = 50
+                         * - high threshold = 4x low
+                         * - sobel kernel size = 3x3
+                         */
+                        int lowThresh = 50;
+                        int kernSize = 3;
+                        Canny(inputImage, inputImage, lowThresh, 3 * lowThresh, kernSize);
+                        // cv::resize(inputImage, resizeImg, cv::Size(40, 30), cv::INTER_LINEAR);
+                        // cout << "original pic" << inputImage << endl;
+                        // ESP_LOGE(TAG, "DetectCanny", inputImage);
+                        // 霍夫圆检测
+                        vector<Vec3f> pcircles;
+                        HoughCircles(inputImage, pcircles, HOUGH_GRADIENT, 1, 30, lowThresh, 30, 30, 50);
+                        if (pcircles.size() == 1)
                         {
-                            Vec4i l = lines[i];
-                            // [x0, y0, x1, y1]
-                            // line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
-                            if ((distance(l[0], l[1], cc[0], cc[1]) < cc[2]) & (distance(l[2], l[3], cc[0], cc[1]) < cc[2])) // 需在圓內
+
+                            // for (size_t i = 0; i < pcircles.size(); i++)
+                            // {
+                            Vec3f cc = pcircles[0];
+                            circle(src, Point(cc[0], cc[1]), cc[2], Scalar(0, 0, 255), 2, LINE_AA);
+                            circle(src, Point(cc[0], cc[1]), 2, Scalar(125, 25, 255), 2, LINE_AA);
+                            // }
+                            // cout << "src=" << src << endl;
+                            ESP_LOGE(TAG, "Detect only one circle: %d", pcircles.size());
+                            vector<Vec4i> lines;
+                            // HoughLines(src1, lines, 1, CV_PI / 180, 150, 0, 0);
+                            HoughLinesP(inputImage, lines, 1, CV_PI / 180, 3, 10, 1); // 进行霍夫线变换
+                            // ESP_LOGE(TAG, "Detect lines: %d", lines.size());
+                            for (size_t i = 0; i < lines.size(); i++)
                             {
-                                if ((min(l[0], l[2]) - 5 <= cc[0]) & (cc[0] <= max(l[0], l[2]) + 5) & (min(l[1], l[3]) - 5 <= cc[1]) & (cc[1] <= max(l[1], l[3]) + 5)) // 線需大概包含圓心
+                                Vec4i l = lines[i];
+                                // [x0, y0, x1, y1]
+                                // line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
+                                if ((distance(l[0], l[1], cc[0], cc[1]) < cc[2]) & (distance(l[2], l[3], cc[0], cc[1]) < cc[2])) // 需在圓內
                                 {
-                                    float true_theta = 0;
-                                    float delta_x = abs(l[0] - cc[0]);
-                                    float delta_y = abs(l[1] - cc[1]);
-                                    if (((l[0] - cc[0]) < 0) & ((l[1] - cc[1]) > 0))
+                                    if ((min(l[0], l[2]) - 5 <= cc[0]) & (cc[0] <= max(l[0], l[2]) + 5) & (min(l[1], l[3]) - 5 <= cc[1]) & (cc[1] <= max(l[1], l[3]) + 5)) // 線需大概包含圓心
                                     {
-                                        true_theta = CV_PI / 2 - atan(delta_y / delta_x);
-                                    }
-                                    else if (((l[0] - cc[0]) < 0) & ((l[1] - cc[1]) < 0))
-                                    {
-                                        true_theta = CV_PI / 2 + atan(delta_y / delta_x);
-                                    }
-                                    else if (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) < 0))
-                                    {
-                                        true_theta = 3 * CV_PI / 2 - atan(delta_y / delta_x);
-                                    }
-                                    else if (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) > 0))
-                                    {
-                                        true_theta = 3 * CV_PI / 2 + atan(delta_y / delta_x);
-                                    }
-                                    line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
+                                        float true_theta = 0;
+                                        float delta_x = abs(l[0] - cc[0]);
+                                        float delta_y = abs(l[1] - cc[1]);
+                                        if (((l[0] - cc[0]) < 0) & ((l[1] - cc[1]) > 0))
+                                        {
+                                            true_theta = CV_PI / 2 - atan(delta_y / delta_x);
+                                        }
+                                        else if (((l[0] - cc[0]) < 0) & ((l[1] - cc[1]) < 0))
+                                        {
+                                            true_theta = CV_PI / 2 + atan(delta_y / delta_x);
+                                        }
+                                        else if (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) < 0))
+                                        {
+                                            true_theta = 3 * CV_PI / 2 - atan(delta_y / delta_x);
+                                        }
+                                        else if (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) > 0))
+                                        {
+                                            true_theta = 3 * CV_PI / 2 + atan(delta_y / delta_x);
+                                        }
+                                        line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
 
-                                    // cout << "src=" << src << endl;
-                                    ESP_LOGE(TAG, "True theta: %.4f", true_theta / CV_PI * 180);
-                                    ESP_LOGE(TAG, "line length: %.4f", distance(l[0], l[1], l[2], l[3]));
-                                    int theta1 = (int)(true_theta / CV_PI * 180);
-                                    int theta2 = (theta1 + 180) % 360;
-                                    float range1 = 0.1818, range2 = 0.4285;
-                                    int value1, value2;
-                                    if (theta1 <= 110)
-                                    {
-                                        value1 = (int)(theta1 * range1);
-                                    }
-                                    else if (theta1 < 250)
-                                    {
-                                        value1 = (int)(20 + (theta1 - 110) * range2);
-                                    }
-                                    else if (theta1 >= 250)
-                                    {
-                                        value1 = (int)(80 + (theta1 - 250) * range1);
-                                    }
+                                        // cout << "src=" << src << endl;
+                                        ESP_LOGE(TAG, "True theta: %.4f", true_theta / CV_PI * 180);
+                                        ESP_LOGE(TAG, "line length: %.4f", distance(l[0], l[1], l[2], l[3]));
+                                        int theta1 = (int)(true_theta / CV_PI * 180);
+                                        int theta2 = (theta1 + 180) % 360;
+                                        float range1 = 0.1818, range2 = 0.4285;
 
-                                    if (theta2 <= 110)
-                                    {
-                                        value2 = (int)(theta2 * range1);
-                                    }
-                                    else if (theta2 < 250)
-                                    {
-                                        value2 = (int)(20 + (theta2 - 110) * range2);
-                                    }
-                                    else if (theta2 >= 250)
-                                    {
-                                        value2 = (int)(80 + (theta2 - 250) * range1);
-                                    }
+                                        if (theta1 <= 110)
+                                        {
+                                            value1 = (int)(theta1 * range1);
+                                        }
+                                        else if (theta1 < 250)
+                                        {
+                                            value1 = (int)(20 + (theta1 - 110) * range2);
+                                        }
+                                        else if (theta1 >= 250)
+                                        {
+                                            value1 = (int)(80 + (theta1 - 250) * range1);
+                                        }
 
-                                    int valuelen = to_string(value1 + 100).length() + to_string(value2 + 100).length() + 1;
-                                    String mymessage;
-                                    mymessage = mymessage + "AT+SEND=1" + "," + to_string(valuelen) + "," + to_string(value1 + 100) + "," + to_string(value2 + 100);
-                                    cout << mymessage << endl;
+                                        if (theta2 <= 110)
+                                        {
+                                            value2 = (int)(theta2 * range1);
+                                        }
+                                        else if (theta2 < 250)
+                                        {
+                                            value2 = (int)(20 + (theta2 - 110) * range2);
+                                        }
+                                        else if (theta2 >= 250)
+                                        {
+                                            value2 = (int)(80 + (theta2 - 250) * range1);
+                                        }
+                                    }
                                 }
                             }
+                            // cout << "src=" << src << endl;
                         }
-                        // cout << "src=" << src << endl;
+                        else
+                        {
+                            ESP_LOGE(TAG, "Detect too many circles or zero: %d", pcircles.size());
+                            // String mymessage;
+                            // mymessage = mymessage + "AT+SEND=1" + "," + to_string(7) + "," + to_string(999) + "," + to_string(999);
+                            // cout << mymessage << endl;
+                        }
                     }
                     else
                     {
-                        ESP_LOGE(TAG, "Detect too many circles or zero: %d", pcircles.size());
-                        // String mymessage;
-                        // mymessage = mymessage + "AT+SEND=1" + "," + to_string(7) + "," + to_string(999) + "," + to_string(999);
-                        // cout << mymessage << endl;
+                        ESP_LOGE(TAG, "Wrong display mode: %d", (int)currentDisplayMode);
                     }
-                }
-                else
-                {
-                    ESP_LOGE(TAG, "Wrong display mode: %d", (int)currentDisplayMode);
-                }
 
-                // display image on lcd
-                // updateCameraImage(inputImage);
+                    // display image on lcd
+                    // updateCameraImage(inputImage);
+                }
             }
+            int valuelen = to_string(value1 + 100).length() + to_string(value2 + 100).length() + 1;
+            String mymessage;
+            mymessage = mymessage + "AT+SEND=1" + "," + to_string(valuelen) + "," + to_string(value1 + 100) + "," + to_string(value2 + 100);
+            int count = 0;
+            while ((count < 50) & (step != '2'))
+            {
+                count += 1;
+                cout << mymessage << endl;
+                len = uart_read_bytes(ECHO_UART_PORT_NUM, data, (BUF_SIZE - 1), 100);
+                memcpy(chars, data, len);
+                step = chars[9];
+                wait_msec(500);
+            }
+            uart_driver_delete(ECHO_UART_PORT_NUM);
+            esp_sleep_enable_timer_wakeup(5000000);
+            esp_deep_sleep_start();
+            esp_restart();
+            // ESP_LOGI(TAG, "%s mode: around %f fps", displayModeToString(currentDisplayMode).c_str(), 1.0f / ((esp_timer_get_time() - start) / 1000000.0f));
         }
-        // esp_sleep_enable_timer_wakeup(5000000);
-        // esp_deep_sleep_start();
+        out_count += 1;
         wait_msec(500);
-        // ESP_LOGI(TAG, "%s mode: around %f fps", displayModeToString(currentDisplayMode).c_str(), 1.0f / ((esp_timer_get_time() - start) / 1000000.0f));
     }
+    uart_driver_delete(ECHO_UART_PORT_NUM);
+    esp_sleep_enable_timer_wakeup(2000000);
+    esp_deep_sleep_start();
+    esp_restart();
 }
 
 /**
