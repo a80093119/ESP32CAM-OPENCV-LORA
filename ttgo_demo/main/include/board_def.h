@@ -1,5 +1,5 @@
 #define SPI_MISO 16
-#define SPI_MOSI 12
+#define SPI_MOSI 15
 #define SPI_SCLK 14
 
 #define SD_CS 0
