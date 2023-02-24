@@ -166,7 +166,7 @@ static void tx_task()
  */
 void demo_task(void *arg)
 {
-    static Mat src;
+    static Mat line_image, src;
     ESP_LOGI(TAG, "Starting demo_task");
 
     // Display memory infos
@@ -203,7 +203,7 @@ void demo_task(void *arg)
         char chars[len + 1];
         memcpy(chars, data, len);
         char step = chars[9];
-        if (step == '1')
+        if (step != '1')
         {
             // send data by uart
             // int send_len = uart_write_bytes(ECHO_UART_PORT_NUM, (const char *)test_str, strlen(test_str));
@@ -249,6 +249,7 @@ void demo_task(void *arg)
                     {
                         cvtColor(inputImage, inputImage, COLOR_BGR5652GRAY);
                         // cout << "original pic" << inputImage << endl;
+                        inputImage.copyTo(line_image);
                         inputImage.copyTo(src);
                         // Reduce noise with a kernel 3x3
                         GaussianBlur(inputImage, inputImage, Size(3, 3), 0);
@@ -257,21 +258,37 @@ void demo_task(void *arg)
                          * - high threshold = 4x low
                          * - sobel kernel size = 3x3
                          */
-                        int lowThresh = 50;
-                        int kernSize = 3;
+                        // 霍夫圆检测
+                        int lowThresh = 70;
+                        int kernSize = 5;
                         Canny(inputImage, inputImage, lowThresh, 3 * lowThresh, kernSize);
                         // cv::resize(inputImage, resizeImg, cv::Size(40, 30), cv::INTER_LINEAR);
                         // cout << "original pic" << inputImage << endl;
                         // ESP_LOGE(TAG, "DetectCanny", inputImage);
-                        // 霍夫圆检测
                         vector<Vec3f> pcircles;
-                        HoughCircles(inputImage, pcircles, HOUGH_GRADIENT, 1, 30, lowThresh, 30, 30, 50);
-                        if (pcircles.size() == 1)
+                        vector<Vec3f> min_circle;
+                        HoughCircles(inputImage, pcircles, HOUGH_GRADIENT, 1, 20, 210, 20, 30, 50);
+                        cout << pcircles.size() << endl;
+                        if (pcircles.size() >= 1)
                         {
+                            // 找最小圓且圓心在畫面中間
+                            Vec3f cc;
+                            float min_radis = 45;
+                            size_t min_index = 0;
+                            for (size_t i = 0; i < pcircles.size(); i++)
+                            {
+                                cc = pcircles[i];
+                                if ((cc[2] <= min_radis) & (cc[0] >= 100) & (cc[0] <= 200))
+                                {
+                                    min_radis = cc[2];
+                                    min_index = i;
+                                }
+                            }
 
                             // for (size_t i = 0; i < pcircles.size(); i++)
                             // {
-                            Vec3f cc = pcircles[0];
+                            cc = pcircles[min_index];
+                            cout << cc[0] << " " << cc[1] << " " << cc[2] << endl;
                             circle(src, Point(cc[0], cc[1]), cc[2], Scalar(0, 0, 255), 2, LINE_AA);
                             circle(src, Point(cc[0], cc[1]), 2, Scalar(125, 25, 255), 2, LINE_AA);
                             // }
@@ -279,7 +296,22 @@ void demo_task(void *arg)
                             ESP_LOGE(TAG, "Detect only one circle: %d", pcircles.size());
                             vector<Vec4i> lines;
                             // HoughLines(src1, lines, 1, CV_PI / 180, 150, 0, 0);
-                            HoughLinesP(inputImage, lines, 1, CV_PI / 180, 3, 10, 1); // 进行霍夫线变换
+                            // 霍夫線检测
+                            int lowThresh = 100;
+                            int kernSize = 3;
+                            Canny(line_image, line_image, lowThresh, 2 * lowThresh, kernSize);
+                            // for (size_t start_x = cc[2] - 5; start_x <= cc[2] + 5; start_x++)
+                            // {
+                            //     for (size_t start_y = cc[2] - 5; start_y <= cc[2] + 5; start_y++)
+                            //     {
+                            //         if (line_image.at<cv::Vec3b>(i, j)[0] >= 230)
+                            //         {
+                            //             cout << start_x << " " << start_y << endl;
+                            //         }
+                            //     }
+                            // }
+
+                            HoughLinesP(line_image, lines, 1, CV_PI / 180, 1, 10, 3); // 进行霍夫线变换
                             // ESP_LOGE(TAG, "Detect lines: %d", lines.size());
                             for (size_t i = 0; i < lines.size(); i++)
                             {
@@ -351,9 +383,6 @@ void demo_task(void *arg)
                         else
                         {
                             ESP_LOGE(TAG, "Detect too many circles or zero: %d", pcircles.size());
-                            // String mymessage;
-                            // mymessage = mymessage + "AT+SEND=1" + "," + to_string(7) + "," + to_string(999) + "," + to_string(999);
-                            // cout << mymessage << endl;
                         }
                     }
                     else
@@ -369,7 +398,7 @@ void demo_task(void *arg)
             String mymessage;
             mymessage = mymessage + "AT+SEND=1" + "," + to_string(valuelen) + "," + to_string(value1 + 100) + "," + to_string(value2 + 100);
             int count = 0;
-            while ((count < 50) & (step != '2'))
+            while ((count < 5) & (step != '2'))
             {
                 count += 1;
                 cout << mymessage << endl;
