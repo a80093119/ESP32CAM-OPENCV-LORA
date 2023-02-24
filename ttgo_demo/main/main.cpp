@@ -45,6 +45,55 @@ extern CEspLcd *tft;
 
 static lv_obj_t *lvCameraImage; // Camera image object
 
+// 定义直线参数结构体
+struct LinePara
+{
+    float k;
+    float b;
+};
+
+// 获取直线参数
+void getLinePara(float x1, float y1, float x2, float y2, LinePara &LP)
+{
+    double m = 0;
+
+    // 计算分子
+    m = x2 - x1;
+
+    if (0 == m)
+    {
+        LP.k = 10000.0;
+        LP.b = y1 - LP.k * x1;
+    }
+    else
+    {
+        LP.k = (y2 - y1) / (x2 - x1);
+        LP.b = y1 - LP.k * x1;
+    }
+}
+
+// 获取交点
+bool getCross(float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, Point2f &pt)
+{
+
+    LinePara para1, para2;
+    getLinePara(x1, y1, x2, y2, para1);
+    getLinePara(x3, y3, x4, y4, para2);
+
+    // 判断是否平行
+    if (abs(para1.k - para2.k) > 0.5)
+    {
+        pt.x = (para2.b - para1.b) / (para1.k - para2.k);
+        pt.y = para1.k * pt.x + para1.b;
+
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
 void gui_boot_screen()
 {
     static lv_style_t style;
@@ -293,7 +342,7 @@ void demo_task(void *arg)
                             circle(src, Point(cc[0], cc[1]), 2, Scalar(125, 25, 255), 2, LINE_AA);
                             // }
                             // cout << "src=" << src << endl;
-                            ESP_LOGE(TAG, "Detect only one circle: %d", pcircles.size());
+                            ESP_LOGE(TAG, "Detect circles =: %d", pcircles.size());
                             vector<Vec4i> lines;
                             // HoughLines(src1, lines, 1, CV_PI / 180, 150, 0, 0);
                             // 霍夫線检测
@@ -311,78 +360,165 @@ void demo_task(void *arg)
                             //     }
                             // }
 
-                            HoughLinesP(line_image, lines, 1, CV_PI / 180, 1, 10, 3); // 进行霍夫线变换
+                            HoughLinesP(line_image, lines, 1, CV_PI / 180, 1, 5, 1); // 进行霍夫线变换
                             // ESP_LOGE(TAG, "Detect lines: %d", lines.size());
+                            vector<Vec4i> linesInCircles;
+                            Vec4i l;
+                            Point2f line_pt;
+                            // 確認線是否在圓內，圓外的排除
                             for (size_t i = 0; i < lines.size(); i++)
                             {
-                                Vec4i l = lines[i];
-                                // [x0, y0, x1, y1]
-                                // line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
-                                if ((distance(l[0], l[1], cc[0], cc[1]) < cc[2]) & (distance(l[2], l[3], cc[0], cc[1]) < cc[2])) // 需在圓內
+                                l = lines[i];
+                                if ((distance(l[0], l[1], cc[0], cc[1]) < cc[2] * 0.5) & (distance(l[2], l[3], cc[0], cc[1]) < cc[2] * 0.5)) // 需在圓內
                                 {
-                                    if ((min(l[0], l[2]) - 5 <= cc[0]) & (cc[0] <= max(l[0], l[2]) + 5) & (min(l[1], l[3]) - 5 <= cc[1]) & (cc[1] <= max(l[1], l[3]) + 5)) // 線需大概包含圓心
-                                    {
-                                        float true_theta = 0;
-                                        float delta_x = abs(l[0] - cc[0]);
-                                        float delta_y = abs(l[1] - cc[1]);
-                                        if (((l[0] - cc[0]) < 0) & ((l[1] - cc[1]) > 0))
-                                        {
-                                            true_theta = CV_PI / 2 - atan(delta_y / delta_x);
-                                        }
-                                        else if (((l[0] - cc[0]) < 0) & ((l[1] - cc[1]) < 0))
-                                        {
-                                            true_theta = CV_PI / 2 + atan(delta_y / delta_x);
-                                        }
-                                        else if (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) < 0))
-                                        {
-                                            true_theta = 3 * CV_PI / 2 - atan(delta_y / delta_x);
-                                        }
-                                        else if (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) > 0))
-                                        {
-                                            true_theta = 3 * CV_PI / 2 + atan(delta_y / delta_x);
-                                        }
-                                        line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
-
-                                        // cout << "src=" << src << endl;
-                                        ESP_LOGE(TAG, "True theta: %.4f", true_theta / CV_PI * 180);
-                                        ESP_LOGE(TAG, "line length: %.4f", distance(l[0], l[1], l[2], l[3]));
-                                        int theta1 = (int)(true_theta / CV_PI * 180);
-                                        int theta2 = (theta1 + 180) % 360;
-                                        float range1 = 0.1818, range2 = 0.4285;
-
-                                        if (theta1 <= 110)
-                                        {
-                                            value1 = (int)(theta1 * range1);
-                                        }
-                                        else if (theta1 < 250)
-                                        {
-                                            value1 = (int)(20 + (theta1 - 110) * range2);
-                                        }
-                                        else if (theta1 >= 250)
-                                        {
-                                            value1 = (int)(80 + (theta1 - 250) * range1);
-                                        }
-
-                                        if (theta2 <= 110)
-                                        {
-                                            value2 = (int)(theta2 * range1);
-                                        }
-                                        else if (theta2 < 250)
-                                        {
-                                            value2 = (int)(20 + (theta2 - 110) * range2);
-                                        }
-                                        else if (theta2 >= 250)
-                                        {
-                                            value2 = (int)(80 + (theta2 - 250) * range1);
-                                        }
-                                    }
+                                    linesInCircles.push_back(l);
                                 }
                             }
+
+                            // 由篩選後的線段進行角度判斷
+                            if (linesInCircles.size() != 0)
+                            {
+
+                                if (linesInCircles.size() == 1)
+                                {
+                                    l = linesInCircles[0];
+                                    line_pt.x = (l[0] + l[2] / 2);
+                                    line_pt.y = (l[1] + l[3] / 2);
+                                }
+                                else if (linesInCircles.size() >= 2)
+                                {
+                                    Vec4i l1 = linesInCircles[0];
+                                    Vec4i l2 = linesInCircles[1];
+                                    getCross(l1[0], l1[1], l1[2], l1[3], l2[0], l2[1], l2[2], l2[3], line_pt);
+                                }
+                                float true_theta = 0;
+                                float delta_x = abs(line_pt.x - cc[0]);
+                                float delta_y = abs(line_pt.y - cc[1]);
+                                if (((line_pt.x - cc[0]) < 0) & ((l[1] - cc[1]) > 0))
+                                {
+                                    true_theta = CV_PI / 2 - atan(delta_y / delta_x);
+                                }
+                                else if (((line_pt.x - cc[0]) < 0) & ((line_pt.y - cc[1]) < 0))
+                                {
+                                    true_theta = CV_PI / 2 + atan(delta_y / delta_x);
+                                }
+                                else if (((line_pt.x - cc[0]) > 0) & ((line_pt.y - cc[1]) < 0))
+                                {
+                                    true_theta = 3 * CV_PI / 2 - atan(delta_y / delta_x);
+                                }
+                                else if (((line_pt.x - cc[0]) > 0) & ((line_pt.y - cc[1]) > 0))
+                                {
+                                    true_theta = 3 * CV_PI / 2 + atan(delta_y / delta_x);
+                                }
+                                line(src, Point(line_pt.x, line_pt.y), Point(cc[0], cc[1]), Scalar(255, 0, 0), 1, LINE_AA);
+
+                                // cout << "src=" << src << endl;
+                                ESP_LOGE(TAG, "True theta: %.4f", true_theta / CV_PI * 180);
+                                ESP_LOGE(TAG, "line length: %.4f", distance(line_pt.x, line_pt.y, cc[0], cc[1]));
+                                int theta1 = (int)(true_theta / CV_PI * 180);
+                                int theta2 = (theta1 + 180) % 360;
+                                float range1 = 0.1818, range2 = 0.4285;
+
+                                if (theta1 <= 110)
+                                {
+                                    value1 = (int)(theta1 * range1);
+                                }
+                                else if (theta1 < 250)
+                                {
+                                    value1 = (int)(20 + (theta1 - 110) * range2);
+                                }
+                                else if (theta1 >= 250)
+                                {
+                                    value1 = (int)(80 + (theta1 - 250) * range1);
+                                }
+
+                                if (theta2 <= 110)
+                                {
+                                    value2 = (int)(theta2 * range1);
+                                }
+                                else if (theta2 < 250)
+                                {
+                                    value2 = (int)(20 + (theta2 - 110) * range2);
+                                }
+                                else if (theta2 >= 250)
+                                {
+                                    value2 = (int)(80 + (theta2 - 250) * range1);
+                                }
+                            }
+                            else
+                            {
+                                ESP_LOGE(TAG, "Not Detect Lines in Circles");
+                            }
+                            // for (size_t i = 0; i < lines.size(); i++)
+                            // {
+                            //     Vec4i l = lines[i];
+                            //     // [x0, y0, x1, y1]
+                            //     // line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
+                            //     if ((distance(l[0], l[1], cc[0], cc[1]) < cc[2]*0.5) & (distance(l[2], l[3], cc[0], cc[1]) < cc[2]*0.5)) // 需在圓內
+                            //     {
+                            //         if ((min(l[0], l[2]) - 5 <= cc[0]) & (cc[0] <= max(l[0], l[2]) + 5) & (min(l[1], l[3]) - 5 <= cc[1]) & (cc[1] <= max(l[1], l[3]) + 5)) // 線需大概包含圓心
+                            //         {
+                            //             float true_theta = 0;
+                            //             float delta_x = abs(l[0] - cc[0]);
+                            //             float delta_y = abs(l[1] - cc[1]);
+                            //             if (((l[0] - cc[0]) < 0) & ((l[1] - cc[1]) > 0))
+                            //             {
+                            //                 true_theta = CV_PI / 2 - atan(delta_y / delta_x);
+                            //             }
+                            //             else if (((l[0] - cc[0]) < 0) & ((l[1] - cc[1]) < 0))
+                            //             {
+                            //                 true_theta = CV_PI / 2 + atan(delta_y / delta_x);
+                            //             }
+                            //             else if (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) < 0))
+                            //             {
+                            //                 true_theta = 3 * CV_PI / 2 - atan(delta_y / delta_x);
+                            //             }
+                            //             else if (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) > 0))
+                            //             {
+                            //                 true_theta = 3 * CV_PI / 2 + atan(delta_y / delta_x);
+                            //             }
+                            //             line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
+
+                            //             // cout << "src=" << src << endl;
+                            //             ESP_LOGE(TAG, "True theta: %.4f", true_theta / CV_PI * 180);
+                            //             ESP_LOGE(TAG, "line length: %.4f", distance(l[0], l[1], l[2], l[3]));
+                            //             int theta1 = (int)(true_theta / CV_PI * 180);
+                            //             int theta2 = (theta1 + 180) % 360;
+                            //             float range1 = 0.1818, range2 = 0.4285;
+
+                            //             if (theta1 <= 110)
+                            //             {
+                            //                 value1 = (int)(theta1 * range1);
+                            //             }
+                            //             else if (theta1 < 250)
+                            //             {
+                            //                 value1 = (int)(20 + (theta1 - 110) * range2);
+                            //             }
+                            //             else if (theta1 >= 250)
+                            //             {
+                            //                 value1 = (int)(80 + (theta1 - 250) * range1);
+                            //             }
+
+                            //             if (theta2 <= 110)
+                            //             {
+                            //                 value2 = (int)(theta2 * range1);
+                            //             }
+                            //             else if (theta2 < 250)
+                            //             {
+                            //                 value2 = (int)(20 + (theta2 - 110) * range2);
+                            //             }
+                            //             else if (theta2 >= 250)
+                            //             {
+                            //                 value2 = (int)(80 + (theta2 - 250) * range1);
+                            //             }
+                            //         }
+                            //     }
+                            // }
                             // cout << "src=" << src << endl;
                         }
                         else
                         {
-                            ESP_LOGE(TAG, "Detect too many circles or zero: %d", pcircles.size());
+                            ESP_LOGE(TAG, "Detect Zeros Circle");
                         }
                     }
                     else

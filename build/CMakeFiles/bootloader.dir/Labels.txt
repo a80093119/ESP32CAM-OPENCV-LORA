@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+/project/esp32/examples/ttgo_demo/build/CMakeFiles/bootloader
+/project/esp32/examples/ttgo_demo/build/CMakeFiles/bootloader.rule
+/project/esp32/examples/ttgo_demo/build/CMakeFiles/bootloader-complete.rule
+/project/esp32/examples/ttgo_demo/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+/project/esp32/examples/ttgo_demo/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+/project/esp32/examples/ttgo_demo/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+/project/esp32/examples/ttgo_demo/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
+/project/esp32/examples/ttgo_demo/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+/project/esp32/examples/ttgo_demo/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+/project/esp32/examples/ttgo_demo/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
