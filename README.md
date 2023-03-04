@@ -18,6 +18,7 @@ https://www.youtube.com/watch?v=7qPIRBY6C8c&ab_channel=ThatProject
 https://github.com/joachimBurket/esp32-opencv 
 
 # Docker啟動指令  
+docker pull espressif/idf:release-v4.2
 cd esp32-opencv  
 docker run --rm -v $PWD:/project:z -w /project -it espressif/idf  
 ## build opencv  
