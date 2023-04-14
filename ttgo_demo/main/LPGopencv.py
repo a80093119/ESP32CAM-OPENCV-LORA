@@ -1,3 +1,23 @@
+# In[]
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+import numpy as np
+import cv2
+import math
+import copy
+import os 
+
+def plot_img(data):
+    plt.figure()
+    plt.imshow(data, cmap='gray', vmin=0, vmax=255)
+    # plt.axis('off')
+    plt.show()
+
+os.chdir("D:/FTP/0410")
+gray = cv2.imread('image214.jpg', cv2.IMREAD_GRAYSCALE)
+gray = gray[360:660, 580:880]
+plot_img(gray)
+# In[]
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import numpy as np
@@ -9,7 +29,7 @@ import copy
 def plot_img(data):
     plt.figure()
     plt.imshow(data, cmap='gray', vmin=0, vmax=255)
-    plt.axis('off')
+    # plt.axis('off')
     plt.show()
 
 
@@ -20,9 +40,10 @@ str_img_test = str_img_test.replace(";", ",")
 replace_n = str_img_test.replace("\n", "")
 img_test = np.array(replace_n.split(","), dtype=np.uint8)
 #img_test = np.array(str_img_test[:-1].split(","), dtype=np.uint8)
-gray = img_test.reshape(240, 320)
+gray = img_test.reshape(300, 300)
 plot_img(gray)
 
+# In[]
 kernel_size = 3
 blur_gray = cv2.GaussianBlur(gray, (kernel_size, kernel_size), 0)
 plot_img(blur_gray)
@@ -32,31 +53,30 @@ high_threshold = 150
 masked_edges = cv2.Canny(blur_gray, low_threshold, high_threshold)
 plot_img(masked_edges)
 
-# rho = 1
-# theta = np.pi/180
-# threshold = 3
-# min_line_length = 10
-# max_line_gap = 1
+rho = 1
+theta = np.pi/180
+threshold = 1
+min_line_length = 20
+max_line_gap = 1
 
-# line_image = np.copy(gray)*0  # creating a blank to draw lines on
+line_image = np.copy(gray)*0  # creating a blank to draw lines on
 
-# lines = cv2.HoughLinesP(masked_edges, rho, theta, threshold, np.array([]),
-#                         min_line_length, max_line_gap)
+lines = cv2.HoughLinesP(masked_edges, rho, theta, threshold, np.array([]),
+                        min_line_length, max_line_gap)
 
-# for line in lines:
-#     for x1, y1, x2, y2 in line:
-#         cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
+for line in lines:
+    for x1, y1, x2, y2 in line:
+        cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
 
-# #color_edges = np.dstack((masked_edges, masked_edges, masked_edges))
-# combo = cv2.addWeighted(masked_edges, 0.8, line_image, 1, 0)
-# plt.imshow(combo)
+#color_edges = np.dstack((masked_edges, masked_edges, masked_edges))
+combo = cv2.addWeighted(masked_edges, 0.8, line_image, 1, 0)
+plt.imshow(combo)
 
+# In[]
 # cv.HoughCircles函数设置参数
-
-
 image = np.copy(masked_edges)
 circles = cv2.HoughCircles(
-    image, cv2.HOUGH_GRADIENT, 1, 30, param1=80, param2=30, minRadius=30, maxRadius=50)
+    image, cv2.HOUGH_GRADIENT, 1, 30, param1=80, param2=30, minRadius=125, maxRadius=140)
 circles = np.uint16(np.around(circles))
 print(circles)
 for i in circles[0, :]:
@@ -64,7 +84,7 @@ for i in circles[0, :]:
     cv2.circle(image, (i[0], i[1]), 2, (255, 0, 0), 2)
 plt.imshow(image)
 
-
+# In[]
 def dist_2_pt(x1, y1, x2, y2):
     return np.sqrt(pow(x1-x2, 2)+pow(y1-y2, 2))
     
@@ -117,3 +137,5 @@ elif (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) > 0)):
     true_theta = 3 * np.pi / 2 + math.atan(delta_y / delta_x)
 
 print(true_theta / np.pi * 180)
+
+# %%

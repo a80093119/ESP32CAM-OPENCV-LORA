@@ -7,6 +7,7 @@
 #include <esp_log.h>
 #include <esp_sleep.h>
 #include <esp_err.h>
+#include "esp_wifi.h"
 #include <esp_timer.h>
 #include <driver/uart.h>
 
@@ -23,6 +24,14 @@
 
 #include "iot_lvgl.h"
 
+#include <string.h>
+#include "freertos/event_groups.h"
+#include "esp_system.h"
+#include "esp_event.h"
+#include "nvs_flash.h"
+#include "lwip/err.h"
+#include "lwip/sys.h"
+
 using namespace cv;
 using namespace std;
 
@@ -31,6 +40,40 @@ extern "C"
     void app_main(void);
 }
 
+
+// #define WIFI_SSID       "ChangChiaLen"
+// #define WIFI_PASSWORD   "ab230304"
+
+// #define EXAMPLE_WIFI_SSID             "ChangChiaLen"
+// #define EXAMPLE_WIFI_PASS             "ab230304"
+// #define EXAMPLE_MAXIMUM_RETRY         10
+
+
+// #define EXAMPLE_STATIC_IP_ADDR        "172.20.10.2"
+// #define EXAMPLE_STATIC_NETMASK_ADDR   "255.255.255.0"
+// #define EXAMPLE_STATIC_GW_ADDR        "0.0.0.0"
+/* FreeRTOS event group to signal when we are connected*/
+// static EventGroupHandle_t s_wifi_event_group;
+
+/* The event group allows multiple bits for each event, but we only care about two events:
+ * - we are connected to the AP with an IP
+ * - we failed to connect after the maximum amount of retries */
+#define EXAMPLE_ESP_WIFI_SSID      "ChangChiaLun"
+#define EXAMPLE_ESP_WIFI_PASS      "ab230304"
+#define EXAMPLE_ESP_MAXIMUM_RETRY  50
+
+/* FreeRTOS event group to signal when we are connected*/
+static EventGroupHandle_t s_wifi_event_group;
+
+/* The event group allows multiple bits for each event, but we only care about two events:
+ * - we are connected to the AP with an IP
+ * - we failed to connect after the maximum amount of retries */
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
+
+static int s_retry_num = 0;
+
+//** define for uart setting
 #define ECHO_TEST_TXD (GPIO_NUM_12)
 #define ECHO_TEST_RXD (GPIO_NUM_13)
 #define ECHO_TEST_RTS (UART_PIN_NO_CHANGE)
@@ -39,11 +82,156 @@ extern "C"
 #define ECHO_UART_PORT_NUM (UART_NUM_2)
 #define BUF_SIZE (1024)
 
+//** define for ftp setting
+#define FTP_SERVER "172.20.10.6"
+#define FTP_USER "ChangChiaLun"
+#define FTP_PASS "ab230304"
+
 #define TAG "main"
 
 extern CEspLcd *tft;
 
 static lv_obj_t *lvCameraImage; // Camera image object
+
+// 定义直线参数结构体
+struct LinePara
+{
+    float k;
+    float b;
+};
+
+// 获取直线参数
+void getLinePara(float x1, float y1, float x2, float y2, LinePara &LP)
+{
+    double m = 0;
+
+    // 计算分子
+    m = x2 - x1;
+
+    if (0 == m)
+    {
+        LP.k = 10000.0;
+        LP.b = y1 - LP.k * x1;
+    }
+    else
+    {
+        LP.k = (y2 - y1) / (x2 - x1);
+        LP.b = y1 - LP.k * x1;
+    }
+}
+
+// 获取交点
+bool getCross(float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, Point2f &pt)
+{
+
+    LinePara para1, para2;
+    getLinePara(x1, y1, x2, y2, para1);
+    getLinePara(x3, y3, x4, y4, para2);
+
+    // 判断是否平行
+    if (abs(para1.k - para2.k) > 0.5)
+    {
+        pt.x = (para2.b - para1.b) / (para1.k - para2.k);
+        pt.y = para1.k * pt.x + para1.b;
+
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+//** function to set wifi
+/* The examples use WiFi configuration that you can set via project configuration menu
+
+   If you'd rather not, just change the below entries to strings with
+   the config you want - ie #define EXAMPLE_WIFI_SSID "mywifissid"
+*/
+
+static void event_handler(void* arg, esp_event_base_t event_base,
+                                int32_t event_id, void* event_data)
+{
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
+            esp_wifi_connect();
+            s_retry_num++;
+            ESP_LOGI(TAG, "retry to connect to the AP");
+        } else {
+            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+        }
+        ESP_LOGI(TAG,"connect to the AP fail");
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+        s_retry_num = 0;
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    }
+}
+
+void wifi_init_sta(void)
+{
+    s_wifi_event_group = xEventGroupCreate();
+
+    ESP_ERROR_CHECK(esp_netif_init());
+
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+    esp_netif_t *my_sta = esp_netif_create_default_wifi_sta();
+
+    esp_netif_dhcpc_stop(my_sta);
+
+    esp_netif_ip_info_t ip_info;
+
+    IP4_ADDR(&ip_info.ip, 172, 20, 10, 3);
+   	IP4_ADDR(&ip_info.gw, 172, 20, 10, 1);
+   	IP4_ADDR(&ip_info.netmask, 255, 255, 255, 240);
+
+    esp_netif_set_ip_info(my_sta, &ip_info);
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL));
+
+    wifi_config_t wifi_config = {
+        .sta = {
+            {.ssid = EXAMPLE_ESP_WIFI_SSID},
+            {.password = EXAMPLE_ESP_WIFI_PASS}
+        },
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
+    ESP_ERROR_CHECK(esp_wifi_start() );
+
+    ESP_LOGI(TAG, "wifi_init_sta finished.");
+
+    /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
+     * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+            pdFALSE,
+            pdFALSE,
+            portMAX_DELAY);
+
+    /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
+     * happened. */
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
+                 EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+    } else if (bits & WIFI_FAIL_BIT) {
+        ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
+                 EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+    } else {
+        ESP_LOGE(TAG, "UNEXPECTED EVENT");
+    }
+
+    ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler));
+    ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler));
+    vEventGroupDelete(s_wifi_event_group);
+}
 
 void gui_boot_screen()
 {
@@ -150,20 +338,21 @@ static const std::string displayModeToString(DisplayMode dispMode)
     return (it == DisplayModeStrings.end()) ? "Out of range" : it->second;
 }
 
-static void tx_task()
-{
-    const char *Txdata = (char *)malloc(100);
-    Txdata = "AT+SEND=1,7,101,151";
-    int send_len = uart_tx_chars(ECHO_UART_PORT_NUM, Txdata, strlen(Txdata));
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
-    cout << "send OK! " << send_len << endl;
-    // free(Txdata);
-}
+// static void tx_task()
+// {
+//     const char *Txdata = (char *)malloc(100);
+//     Txdata = "AT+SEND=1,7,101,151";
+//     int send_len = uart_tx_chars(ECHO_UART_PORT_NUM, Txdata, strlen(Txdata));
+//     vTaskDelay(2000 / portTICK_PERIOD_MS);
+//     cout << "send OK! " << send_len << endl;
+//     // free(Txdata);
+// }
 
 /**
  * Task doing the demo: Getting image from camera, processing it with opencv depending on the displayMode and
  * displaying it on the lcd
  */
+
 void demo_task(void *arg)
 {
     static Mat line_image, src;
@@ -203,6 +392,7 @@ void demo_task(void *arg)
         char chars[len + 1];
         memcpy(chars, data, len);
         char step = chars[9];
+        //char step = '1';
         if (step != '1')
         {
             // send data by uart
@@ -232,7 +422,9 @@ void demo_task(void *arg)
                 else
                 {                                                            // RGB565 pixformat
                     Mat inputImage(fb->height, fb->width, CV_8UC2, fb->buf); // rgb565 is 2 channels of 8-bit unsigned
-
+                    cout << fb->height << endl;
+                    cout << fb->width << endl;
+                    inputImage = inputImage(Rect(560, 360, 300, 300));
                     if (currentDisplayMode == DisplayMode::RGB)
                     {
                     }
@@ -247,38 +439,49 @@ void demo_task(void *arg)
                     }
                     else if (currentDisplayMode == DisplayMode::EDGES)
                     {
-                        cvtColor(inputImage, inputImage, COLOR_BGR5652GRAY);
-                        // cout << "original pic" << inputImage << endl;
-                        inputImage.copyTo(line_image);
-                        inputImage.copyTo(src);
+                        Mat inputImageCut = inputImage.clone();
+                        cvtColor(inputImageCut, inputImageCut, COLOR_BGR5652GRAY);
+                        cout << inputImageCut.rows << endl;
+                        cout << inputImageCut.cols << endl;
+                        // cout << "original pic" << inputImageCut << endl;
+                        inputImageCut.copyTo(line_image);
+                        inputImageCut.copyTo(src);
+                        // cout << line_image.rows << endl;
+                        // cout << line_image.cols << endl;
+                        // cout << src.rows << endl;
+                        // cout << src.cols << endl;
                         // Reduce noise with a kernel 3x3
-                        GaussianBlur(inputImage, inputImage, Size(3, 3), 0);
+                        GaussianBlur(inputImageCut, inputImageCut, Size(3, 3), 0);
+                        // cout << "original pic" << inputImageCut << endl;
+                        // Reduce line image noise with a kernel 3x3
+                        // GaussianBlur(line_image, line_image, Size(3, 3), 0);
+                        
                         /** Apply the canny edges detector with:
                          * - low threshold = 50
                          * - high threshold = 4x low
                          * - sobel kernel size = 3x3
                          */
                         // 霍夫圆检测
-                        int lowThresh = 70;
-                        int kernSize = 5;
-                        Canny(inputImage, inputImage, lowThresh, 3 * lowThresh, kernSize);
+                        int lowThresh = 50;
+                        int kernSize = 3;
+                        Canny(inputImageCut, inputImageCut, lowThresh, 3 * lowThresh, kernSize);
                         // cv::resize(inputImage, resizeImg, cv::Size(40, 30), cv::INTER_LINEAR);
                         // cout << "original pic" << inputImage << endl;
                         // ESP_LOGE(TAG, "DetectCanny", inputImage);
                         vector<Vec3f> pcircles;
                         vector<Vec3f> min_circle;
-                        HoughCircles(inputImage, pcircles, HOUGH_GRADIENT, 1, 20, 210, 20, 30, 50);
+                        HoughCircles(inputImageCut, pcircles, HOUGH_GRADIENT, 1, 30, 80, 30, 125, 140);
                         cout << pcircles.size() << endl;
                         if (pcircles.size() >= 1)
                         {
                             // 找最小圓且圓心在畫面中間
                             Vec3f cc;
-                            float min_radis = 45;
+                            float min_radis = 125;
                             size_t min_index = 0;
                             for (size_t i = 0; i < pcircles.size(); i++)
                             {
                                 cc = pcircles[i];
-                                if ((cc[2] <= min_radis) & (cc[0] >= 100) & (cc[0] <= 200))
+                                if ((cc[2] <= min_radis) & (cc[0] >= 125) & (cc[0] <= 175) & (cc[1] >= 125) & (cc[1] <= 175))
                                 {
                                     min_radis = cc[2];
                                     min_index = i;
@@ -288,18 +491,20 @@ void demo_task(void *arg)
                             // for (size_t i = 0; i < pcircles.size(); i++)
                             // {
                             cc = pcircles[min_index];
-                            cout << cc[0] << " " << cc[1] << " " << cc[2] << endl;
+                            // cout << cc[0] << " " << cc[1] << " " << cc[2] << endl;
                             circle(src, Point(cc[0], cc[1]), cc[2], Scalar(0, 0, 255), 2, LINE_AA);
                             circle(src, Point(cc[0], cc[1]), 2, Scalar(125, 25, 255), 2, LINE_AA);
                             // }
                             // cout << "src=" << src << endl;
-                            ESP_LOGE(TAG, "Detect only one circle: %d", pcircles.size());
+                            ESP_LOGE(TAG, "Detect circles =: %d", pcircles.size());
                             vector<Vec4i> lines;
                             // HoughLines(src1, lines, 1, CV_PI / 180, 150, 0, 0);
                             // 霍夫線检测
-                            int lowThresh = 100;
+                            int lowThresh = 50;
                             int kernSize = 3;
-                            Canny(line_image, line_image, lowThresh, 2 * lowThresh, kernSize);
+                            // convertScaleAbs(line_image, line_image, 1.2, 0);
+                            // line_image.copyTo(src);
+                            Canny(line_image, line_image, lowThresh, 3 * lowThresh, kernSize);
                             // for (size_t start_x = cc[2] - 5; start_x <= cc[2] + 5; start_x++)
                             // {
                             //     for (size_t start_y = cc[2] - 5; start_y <= cc[2] + 5; start_y++)
@@ -311,78 +516,188 @@ void demo_task(void *arg)
                             //     }
                             // }
 
-                            HoughLinesP(line_image, lines, 1, CV_PI / 180, 1, 10, 3); // 进行霍夫线变换
+                            HoughLinesP(line_image, lines, 1, CV_PI / 180, 1, 20, 1); // 进行霍夫线变换
                             // ESP_LOGE(TAG, "Detect lines: %d", lines.size());
+                            ESP_LOGE(TAG, "Detect lines: %d", lines.size());
+                            vector<Vec4i> linesInCircles;
+                            Vec4i l, max_l;
+                            Point2f line_pt;
+                            // 確認線是否在圓內，圓外的排除
+                            float maxline_dist = 0;
                             for (size_t i = 0; i < lines.size(); i++)
                             {
-                                Vec4i l = lines[i];
-                                // [x0, y0, x1, y1]
-                                // line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
-                                if ((distance(l[0], l[1], cc[0], cc[1]) < cc[2]) & (distance(l[2], l[3], cc[0], cc[1]) < cc[2])) // 需在圓內
+                                l = lines[i];
+                                if ((distance(l[0], l[1], cc[0], cc[1]) <= cc[2] * 0.8) & (distance(l[2], l[3], cc[0], cc[1]) <= cc[2] * 0.8)) // 需在圓內
                                 {
-                                    if ((min(l[0], l[2]) - 5 <= cc[0]) & (cc[0] <= max(l[0], l[2]) + 5) & (min(l[1], l[3]) - 5 <= cc[1]) & (cc[1] <= max(l[1], l[3]) + 5)) // 線需大概包含圓心
-                                    {
-                                        float true_theta = 0;
-                                        float delta_x = abs(l[0] - cc[0]);
-                                        float delta_y = abs(l[1] - cc[1]);
-                                        if (((l[0] - cc[0]) < 0) & ((l[1] - cc[1]) > 0))
-                                        {
-                                            true_theta = CV_PI / 2 - atan(delta_y / delta_x);
-                                        }
-                                        else if (((l[0] - cc[0]) < 0) & ((l[1] - cc[1]) < 0))
-                                        {
-                                            true_theta = CV_PI / 2 + atan(delta_y / delta_x);
-                                        }
-                                        else if (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) < 0))
-                                        {
-                                            true_theta = 3 * CV_PI / 2 - atan(delta_y / delta_x);
-                                        }
-                                        else if (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) > 0))
-                                        {
-                                            true_theta = 3 * CV_PI / 2 + atan(delta_y / delta_x);
-                                        }
-                                        line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
-
-                                        // cout << "src=" << src << endl;
-                                        ESP_LOGE(TAG, "True theta: %.4f", true_theta / CV_PI * 180);
-                                        ESP_LOGE(TAG, "line length: %.4f", distance(l[0], l[1], l[2], l[3]));
-                                        int theta1 = (int)(true_theta / CV_PI * 180);
-                                        int theta2 = (theta1 + 180) % 360;
-                                        float range1 = 0.1818, range2 = 0.4285;
-
-                                        if (theta1 <= 110)
-                                        {
-                                            value1 = (int)(theta1 * range1);
-                                        }
-                                        else if (theta1 < 250)
-                                        {
-                                            value1 = (int)(20 + (theta1 - 110) * range2);
-                                        }
-                                        else if (theta1 >= 250)
-                                        {
-                                            value1 = (int)(80 + (theta1 - 250) * range1);
-                                        }
-
-                                        if (theta2 <= 110)
-                                        {
-                                            value2 = (int)(theta2 * range1);
-                                        }
-                                        else if (theta2 < 250)
-                                        {
-                                            value2 = (int)(20 + (theta2 - 110) * range2);
-                                        }
-                                        else if (theta2 >= 250)
-                                        {
-                                            value2 = (int)(80 + (theta2 - 250) * range1);
-                                        }
+                                    if (distance(l[0], l[1], l[2], l[3]) > maxline_dist){
+                                        maxline_dist = distance(l[0], l[1], l[2], l[3]);
+                                        max_l = l;
                                     }
+                                    linesInCircles.push_back(l);
+                                    line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(0, 0, 255), 1, LINE_AA);
                                 }
                             }
+                            // 由篩選後的線段進行角度判斷
+                            if (linesInCircles.size() != 0)
+                            {
+
+                                if (linesInCircles.size() == 1)
+                                {
+                                    l = linesInCircles[0];
+                                    if (distance(l[0], l[1], cc[0], cc[1]) < distance(l[2], l[3], cc[0], cc[1])){
+                                        line_pt.x = l[2];
+                                        line_pt.y = l[3];
+                                    }else{
+                                        line_pt.x = l[0];
+                                        line_pt.y = l[1];
+                                    }
+                                    // line_pt.x = (l[0] + l[2] / 2);
+                                    // line_pt.y = (l[1] + l[3] / 2);
+                                }
+                                else if (linesInCircles.size() >= 2)
+                                {
+                                    l = max_l;
+                                    if (distance(l[0], l[1], cc[0], cc[1]) < distance(l[2], l[3], cc[0], cc[1])){
+                                        line_pt.x = l[2];
+                                        line_pt.y = l[3];
+                                    }else{
+                                        line_pt.x = l[0];
+                                        line_pt.y = l[1];
+                                    }
+                                    // line_pt.x = (l[0] + l[2] / 2);
+                                    // line_pt.y = (l[1] + l[3] / 2);
+                                    // Vec4i l1 = linesInCircles[0];
+                                    // Vec4i l2 = linesInCircles[1];
+                                    // getCross(l1[0], l1[1], l1[2], l1[3], l2[0], l2[1], l2[2], l2[3], line_pt);
+                                }
+                                float true_theta = 0;
+                                float delta_x = abs(line_pt.x - cc[0]);
+                                float delta_y = abs(line_pt.y - cc[1]);
+                                if (((line_pt.x - cc[0]) < 0) & ((l[1] - cc[1]) > 0))
+                                {
+                                    true_theta = CV_PI / 2 - atan(delta_y / delta_x);
+                                }
+                                else if (((line_pt.x - cc[0]) < 0) & ((line_pt.y - cc[1]) < 0))
+                                {
+                                    true_theta = CV_PI / 2 + atan(delta_y / delta_x);
+                                }
+                                else if (((line_pt.x - cc[0]) > 0) & ((line_pt.y - cc[1]) < 0))
+                                {
+                                    true_theta = 3 * CV_PI / 2 - atan(delta_y / delta_x);
+                                }
+                                else if (((line_pt.x - cc[0]) > 0) & ((line_pt.y - cc[1]) > 0))
+                                {
+                                    true_theta = 3 * CV_PI / 2 + atan(delta_y / delta_x);
+                                }
+                                // line(src, Point(line_pt.x, line_pt.y), Point(cc[0], cc[1]), Scalar(255, 0, 0), 1, LINE_AA);
+
+                                // cout << "src=" << src << endl;
+                                ESP_LOGE(TAG, "True theta: %.4f", true_theta / CV_PI * 180);
+                                ESP_LOGE(TAG, "line length: %.4f", distance(line_pt.x, line_pt.y, cc[0], cc[1]));
+                                int theta1 = (int)(true_theta / CV_PI * 180);
+                                int theta2 = (theta1 + 180) % 360;
+                                float range1 = 0.1818, range2 = 0.4285;
+
+                                if (theta1 <= 110)
+                                {
+                                    value1 = (int)(theta1 * range1);
+                                }
+                                else if (theta1 < 250)
+                                {
+                                    value1 = (int)(20 + (theta1 - 110) * range2);
+                                }
+                                else if (theta1 >= 250)
+                                {
+                                    value1 = (int)(80 + (theta1 - 250) * range1);
+                                }
+
+                                if (theta2 <= 110)
+                                {
+                                    value2 = (int)(theta2 * range1);
+                                }
+                                else if (theta2 < 250)
+                                {
+                                    value2 = (int)(20 + (theta2 - 110) * range2);
+                                }
+                                else if (theta2 >= 250)
+                                {
+                                    value2 = (int)(80 + (theta2 - 250) * range1);
+                                }
+                            }
+                            else
+                            {
+                                ESP_LOGE(TAG, "Not Detect Lines in Circles");
+                            }
+                            // for (size_t i = 0; i < lines.size(); i++)
+                            // {
+                            //     Vec4i l = lines[i];
+                            //     // [x0, y0, x1, y1]
+                            //     // line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
+                            //     if ((distance(l[0], l[1], cc[0], cc[1]) < cc[2]*0.5) & (distance(l[2], l[3], cc[0], cc[1]) < cc[2]*0.5)) // 需在圓內
+                            //     {
+                            //         if ((min(l[0], l[2]) - 5 <= cc[0]) & (cc[0] <= max(l[0], l[2]) + 5) & (min(l[1], l[3]) - 5 <= cc[1]) & (cc[1] <= max(l[1], l[3]) + 5)) // 線需大概包含圓心
+                            //         {
+                            //             float true_theta = 0;
+                            //             float delta_x = abs(l[0] - cc[0]);
+                            //             float delta_y = abs(l[1] - cc[1]);
+                            //             if (((l[0] - cc[0]) < 0) & ((l[1] - cc[1]) > 0))
+                            //             {
+                            //                 true_theta = CV_PI / 2 - atan(delta_y / delta_x);
+                            //             }
+                            //             else if (((l[0] - cc[0]) < 0) & ((l[1] - cc[1]) < 0))
+                            //             {
+                            //                 true_theta = CV_PI / 2 + atan(delta_y / delta_x);
+                            //             }
+                            //             else if (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) < 0))
+                            //             {
+                            //                 true_theta = 3 * CV_PI / 2 - atan(delta_y / delta_x);
+                            //             }
+                            //             else if (((l[0] - cc[0]) > 0) & ((l[1] - cc[1]) > 0))
+                            //             {
+                            //                 true_theta = 3 * CV_PI / 2 + atan(delta_y / delta_x);
+                            //             }
+                            //             line(src, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255, 0, 0), 1, LINE_AA);
+
+                            //             // cout << "src=" << src << endl;
+                            //             ESP_LOGE(TAG, "True theta: %.4f", true_theta / CV_PI * 180);
+                            //             ESP_LOGE(TAG, "line length: %.4f", distance(l[0], l[1], l[2], l[3]));
+                            //             int theta1 = (int)(true_theta / CV_PI * 180);
+                            //             int theta2 = (theta1 + 180) % 360;
+                            //             float range1 = 0.1818, range2 = 0.4285;
+
+                            //             if (theta1 <= 110)
+                            //             {
+                            //                 value1 = (int)(theta1 * range1);
+                            //             }
+                            //             else if (theta1 < 250)
+                            //             {
+                            //                 value1 = (int)(20 + (theta1 - 110) * range2);
+                            //             }
+                            //             else if (theta1 >= 250)
+                            //             {
+                            //                 value1 = (int)(80 + (theta1 - 250) * range1);
+                            //             }
+
+                            //             if (theta2 <= 110)
+                            //             {
+                            //                 value2 = (int)(theta2 * range1);
+                            //             }
+                            //             else if (theta2 < 250)
+                            //             {
+                            //                 value2 = (int)(20 + (theta2 - 110) * range2);
+                            //             }
+                            //             else if (theta2 >= 250)
+                            //             {
+                            //                 value2 = (int)(80 + (theta2 - 250) * range1);
+                            //             }
+                            //         }
+                            //     }
+                            // }
                             // cout << "src=" << src << endl;
                         }
                         else
                         {
-                            ESP_LOGE(TAG, "Detect too many circles or zero: %d", pcircles.size());
+                            ESP_LOGE(TAG, "Detect Zeros Circle");
                         }
                     }
                     else
@@ -417,7 +732,7 @@ void demo_task(void *arg)
         wait_msec(500);
     }
     uart_driver_delete(ECHO_UART_PORT_NUM);
-    esp_sleep_enable_timer_wakeup(2000000);
+    esp_sleep_enable_timer_wakeup(10000000);
     esp_deep_sleep_start();
     esp_restart();
 }
@@ -437,6 +752,17 @@ void timer_task(void *arg)
 void app_main()
 {
     ESP_LOGI(TAG, "Starting main");
+
+    // //Initialize NVS
+    // esp_err_t ret = nvs_flash_init();
+    // if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    //   ESP_ERROR_CHECK(nvs_flash_erase());
+    //   ret = nvs_flash_init();
+    // }
+    // ESP_ERROR_CHECK(ret);
+
+    // ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
+    // wifi_init_sta();
 
     /* initializations */
     app_camera_init();
