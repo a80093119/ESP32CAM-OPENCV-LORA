@@ -1,8 +1,6 @@
 #Docker啟動指令
 cd esp32-opencv
-docker run --rm -v C:\Users\user\Downloads\esp32opencv:/project:z -w /project -it espressif/idf:release-v4.2
-docker run --rm -v C:\Users\user\Downloads\esp32-opencv-master:/project:z -w /project -it espressif/idf:release-v4.2
-docker run --rm -v C:\Users\user\Downloads\lv_port_esp32:/project:z -w /project -it espressif/idf:release-v4.2
+docker run --rm -v D:\ESP32cam-git\ESP32CAM-OPENCV-LORA\ttgo_demo:/project:z -w /project -it espressif/idf:release-v4.2
 
 #build opencv
 ./esp32/scripts/build_opencv_for_esp32.sh /opt/esp/idf/tools/cmake/toolchain-esp32.cmake /project/esp32/examples/ttgo_demo/main

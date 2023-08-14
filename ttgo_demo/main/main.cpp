@@ -374,6 +374,10 @@ void demo_task(void *arg)
     {
         cout << out_count << endl;
         currentDisplayMode = DisplayMode::EDGES;
+        gpio_set_level(GPIO_NUM_4, 1); // 把这个GPIO输出高電位
+        // camera_fb_t *fb = esp_camera_fb_get();
+        wait_msec(500);
+        gpio_set_level(GPIO_NUM_4, 0); // 把这个GPIO输出低電位
         // auto start = esp_timer_get_time();
         // cout << "theta1=" << to_string(1) << ","
         //      << "theta2=" << to_string(51) << endl;
@@ -393,7 +397,7 @@ void demo_task(void *arg)
         memcpy(chars, data, len);
         char step = chars[9];
         //char step = '1';
-        if (step != '1')
+        if (step == '1')
         {
             // send data by uart
             // int send_len = uart_write_bytes(ECHO_UART_PORT_NUM, (const char *)test_str, strlen(test_str));

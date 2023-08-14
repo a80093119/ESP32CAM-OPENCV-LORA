@@ -6,5 +6,5 @@
         "string": "cpp",
         "iostream": "cpp"
     },
-    "idf.portWin": "COM13"
+    "idf.portWin": "COM7"
 }
